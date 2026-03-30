@@ -123,9 +123,9 @@ export function CreditScoreGauge({
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
           <div className="flex flex-col items-center">
             <span className={`text-4xl font-bold ${band.color}`}>{score}</span>
-            <FinancialTermTooltip 
-              term="Credit Score" 
-              explanation={FINANCIAL_EXPLANATIONS.CREDIT_SCORE} 
+            <FinancialTermTooltip
+              term="Credit Score"
+              explanation={FINANCIAL_EXPLANATIONS.CREDIT_SCORE}
               className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mt-1"
             />
           </div>
