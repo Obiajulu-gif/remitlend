@@ -24,6 +24,7 @@ import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import { Spinner } from "../../components/global_ui/Spinner";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import Link from "next/link";
+import { formatAmountOnBlur } from "../../utils/amountPrecision";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -316,6 +317,8 @@ export default function RemittancesPage() {
                 placeholder="0.00"
                 value={minAmount}
                 onChange={(e) => setMinAmount(e.target.value)}
+                onBlur={(e) => setMinAmount(formatAmountOnBlur(e.target.value, "USDC"))}
+                step="0.01"
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
               />
             </div>
@@ -328,6 +331,8 @@ export default function RemittancesPage() {
                 placeholder="0.00"
                 value={maxAmount}
                 onChange={(e) => setMaxAmount(e.target.value)}
+                onBlur={(e) => setMaxAmount(formatAmountOnBlur(e.target.value, "USDC"))}
+                step="0.01"
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
               />
             </div>

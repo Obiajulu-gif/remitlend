@@ -17,6 +17,7 @@ import {
   useWalletStore,
 } from "../../../stores/useWalletStore";
 import { useContractToast } from "../../../hooks/useContractToast";
+import { formatAmountOnBlur, getAssetStep } from "../../../utils/amountPrecision";
 
 const DEMO_AVAILABLE_BALANCE = 1_000;
 
@@ -184,8 +185,10 @@ export default function RepayLoanPage() {
           <input
             id="repayment-amount"
             type="number"
+            step={getAssetStep("USDC")}
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
+            onBlur={(event) => setAmount(formatAmountOnBlur(event.target.value, "USDC"))}
             className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-900 outline-none transition focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
           />
         </div>
