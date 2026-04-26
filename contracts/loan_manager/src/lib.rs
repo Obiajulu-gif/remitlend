@@ -433,7 +433,7 @@ impl LoanManager {
         }
 
         let overdue_ledgers = current_ledger - late_fee_start;
-        let incremental_fee = remaining_debt
+        let incremental_fee = loan.amount
             .checked_mul(Self::late_fee_rate_bps(env) as i128)
             .and_then(|value| value.checked_mul(overdue_ledgers as i128))
             .and_then(|value| value.checked_div(10_000))
