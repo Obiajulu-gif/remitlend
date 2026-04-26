@@ -50,18 +50,16 @@ export function truncateToAssetPrecision(value: string, asset: string): string {
   return num.toFixed(decimals);
 }
 
-/**
- * Validate that a value doesn't exceed the asset's decimal precision.
- * Returns an error message if invalid, or null if valid.
- */
-export function validateAmountPrecision(value: string, asset: string): string | null {
-  if (!value) return null;
+/** Validate that an amount string has the correct number of decimals for the asset. */
+export function validateAmountPrecision(value: string, asset: string): string | undefined {
+  if (!value) return undefined;
   const decimals = getAssetDecimals(asset);
   const parts = value.split(".");
-  if (parts.length === 2 && parts[1].length > decimals) {
-    return `${asset} supports a maximum of ${decimals} decimal place${decimals !== 1 ? "s" : ""}`;
+  if (parts.length > 1 && parts[1].length > decimals) {
+    return `Max ${decimals} decimal places for ${asset.toUpperCase()}`;
   }
-  return null;
+
+  return undefined;
 }
 
 /**
