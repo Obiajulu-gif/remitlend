@@ -461,7 +461,7 @@ export class EventIndexer {
               );
             }
           } else if (event.eventType === "CollateralLiquidated") {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
+            const { defaultPenalty } = await sorobanService.getScoreConfig();
             if (event.borrower) {
               scoreUpdates.set(
                 event.borrower,

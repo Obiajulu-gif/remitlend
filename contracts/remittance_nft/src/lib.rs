@@ -1012,15 +1012,16 @@ impl RemittanceNFT {
             })
     }
 
-    pub fn set_score_config(env: Env, config: ScoreConfig) {
+    pub fn set_score_config(env: Env, config: ScoreConfig) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
-        Self::assert_not_paused(&env).unwrap();
+        Self::assert_not_paused(&env)?;
 
         env.storage().instance().set(&DataKey::ScoreConfig, &config);
         Self::bump_instance_ttl(&env);
 
         env.events()
             .publish((symbol_short!("ScoreCfg"),), (config.repayment_delta, config.default_penalty));
+        Ok(())
     }
 }
 

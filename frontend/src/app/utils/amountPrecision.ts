@@ -17,7 +17,8 @@ export const ASSET_DECIMALS: Record<string, number> = {
 const DEFAULT_DECIMALS = 7;
 
 /** Get the max decimal places for a given asset code. */
-export function getAssetDecimals(asset: string): number {
+export function getAssetDecimals(asset: string | undefined | null): number {
+  if (!asset) return DEFAULT_DECIMALS;
   return ASSET_DECIMALS[asset.toUpperCase()] ?? DEFAULT_DECIMALS;
 }
 
