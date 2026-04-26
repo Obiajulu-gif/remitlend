@@ -42,6 +42,13 @@ pub struct ScoreHistoryEntry {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScoreConfig {
+    pub repayment_delta: u32,
+    pub default_penalty: u32,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
     Metadata(Address),
@@ -56,6 +63,7 @@ pub enum DataKey {
     TransferCooldown(Address),
     Paused,
     ProposedAdmin,
+    ScoreConfig,
 }
 
 #[contract]
@@ -991,6 +999,28 @@ impl RemittanceNFT {
 
         env.events()
             .publish((Symbol::new(&env, "AdminTransferred"),), new_admin);
+    }
+
+    pub fn get_score_config(env: Env) -> ScoreConfig {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::ScoreConfig)
+            .unwrap_or(ScoreConfig {
+                repayment_delta: 15,
+                default_penalty: 50,
+            })
+    }
+
+    pub fn set_score_config(env: Env, config: ScoreConfig) {
+        Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env).unwrap();
+
+        env.storage().instance().set(&DataKey::ScoreConfig, &config);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((symbol_short!("ScoreCfg"),), (config.repayment_delta, config.default_penalty));
     }
 }
 
