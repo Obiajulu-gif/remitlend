@@ -560,17 +560,16 @@ impl LoanManager {
         }
 
         let remaining_principal = Self::remaining_principal(loan);
-        if remaining_principal <= 0 {
+        // If everything (principal + interest) is already paid, stop accruing.
+        if remaining_principal <= 0 && loan.accrued_interest <= 0 {
             loan.last_late_fee_ledger = current_ledger;
             return 0;
         }
 
-        let remaining_debt = remaining_principal
-            .checked_add(loan.accrued_interest)
-            .expect("debt overflow");
-
         let overdue_ledgers = current_ledger - late_fee_start;
-        let incremental_fee = remaining_debt
+        // Fix: Use original loan.amount as the base, not remaining_debt.
+        let incremental_fee = loan
+            .amount
             .checked_mul(Self::late_fee_rate_bps(env) as i128)
             .and_then(|value| value.checked_mul(overdue_ledgers as i128))
             .and_then(|value| value.checked_div(10_000))
