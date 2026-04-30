@@ -1,4 +1,4 @@
-﻿import { jest } from "@jest/globals";
+import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
 jest.setTimeout(30000);
