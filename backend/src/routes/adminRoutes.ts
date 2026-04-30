@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireApiKey } from "../middleware/auth.js";
+import { requireJwtAuth, requireRoles } from "../middleware/jwtAuth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -18,6 +19,8 @@ import {
 import {
   listLoanDisputes,
   resolveLoanDispute,
+  getLoanDispute,
+  rejectLoanDispute,
 } from "../controllers/adminDisputeController.js";
 import { query } from "../db/connection.js";
 
@@ -79,9 +82,37 @@ router.post(
   requireApiKey,
   resolveLoanDispute,
 );
+// New admin JWT-protected endpoints
+router.get(
+  "/disputes",
+  requireJwtAuth,
+  requireRoles("admin"),
+  listLoanDisputes,
+);
+router.get(
+  "/disputes/:disputeId",
+  requireJwtAuth,
+  requireRoles("admin"),
+  getLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/resolve",
+  requireJwtAuth,
+  requireRoles("admin"),
+  resolveLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/reject",
+  requireJwtAuth,
+  requireRoles("admin"),
+  rejectLoanDispute,
+);
 
 const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).max(100).optional(),
+  loanIds: z
+    .array(z.number().int().positive())
+    .max(1000, "max 1000 loan IDs per request")
+    .optional(),
 });
 
 /**
@@ -92,7 +123,7 @@ const checkDefaultsBodySchema = z.object({
  *     description: >
  *       Calls the LoanManager `check_defaults` contract function for the
  *       provided loan IDs (or all overdue loans if IDs are omitted).
- *       Bounded to a maximum of 100 IDs per request for security.
+ *       Bounded to a maximum of 1000 IDs per request for security.
  *     tags: [Admin]
  *     security:
  *       - ApiKeyAuth: []
@@ -107,7 +138,7 @@ const checkDefaultsBodySchema = z.object({
  *                 type: array
  *                 items:
  *                   type: integer
- *                 maxItems: 100
+ *                 maxItems: 1000
  *                 description: Explicit list of loan IDs to check
  *     responses:
  *       200:

@@ -17,36 +17,11 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
+import { LoanStatusBadge, type LoanStatus } from "../components/ui/LoanStatusBadge";
 import { useUserStore } from "../stores/useUserStore";
 import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 
-export class NetworkUnavailableError extends Error {
-  name = "NetworkUnavailableError";
-}
-
-const DEFAULT_API_URL = "http://localhost:3001";
-
-// Keep builds and prerendering safe even when CI/deploy env vars are absent.
-// Runtime environments should still override this with NEXT_PUBLIC_API_URL.
-function resolveApiUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_URL;
-
-  if (url) {
-    return url;
-  }
-
-  console.warn(
-    "[remitlend] NEXT_PUBLIC_API_URL is not set. " + `Falling back to ${DEFAULT_API_URL}.`,
-  );
-  return DEFAULT_API_URL;
-}
-
-let cachedApiUrl: string | null = null;
-function getApiUrl(): string {
-  if (cachedApiUrl !== null) return cachedApiUrl;
-  cachedApiUrl = resolveApiUrl();
-  return cachedApiUrl;
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 // ─── Query key factory ────────────────────────────────────────────────────────
 
@@ -97,10 +72,6 @@ export const queryKeys = {
  * - Throws a descriptive error on non-2xx responses
  */
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    throw new NetworkUnavailableError("You appear to be offline. Please reconnect and try again.");
-  }
-
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -120,14 +91,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     }
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${getApiUrl()}${path}`, { ...options, headers });
-  } catch (error) {
-    throw new NetworkUnavailableError(
-      "Network request failed. Check your connection and try again.",
-    );
-  }
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
 
   if (response.status === 401 && token) {
     const error = await response
@@ -146,8 +110,6 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-export type LoanStatus = "pending" | "active" | "repaid" | "defaulted" | "liquidated";
 
 export interface Loan {
   id: string;
@@ -236,7 +198,7 @@ export interface LoanDetails {
   totalRepaid: number;
   totalOwed: number;
   interestRate: number;
-  status: LoanStatus;
+  status: "active" | "repaid" | "defaulted" | "pending" | "liquidated";
   requestedAt?: string;
   approvedAt?: string;
   events: LoanEvent[];
@@ -744,7 +706,7 @@ export function useCreditScore(
         return;
       }
 
-      const url = `${getApiUrl()}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
+      const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
       const es = new EventSource(url, { withCredentials: true });
       eventSource = es;
 
