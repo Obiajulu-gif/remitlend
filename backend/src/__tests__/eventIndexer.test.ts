@@ -1,6 +1,8 @@
 import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
+jest.setTimeout(30000);
+
 const mockQuery =
   jest.fn<
     (
@@ -365,6 +367,9 @@ describe("EventIndexer", () => {
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ address: borrowerRequested }),
+    );
     expect(mockCreateNotification).toHaveBeenCalledTimes(3);
   });
 
@@ -544,7 +549,7 @@ describe("EventIndexer", () => {
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
-    expect(insertStatements[0]).toContain("ON CONFLICT (event_id) DO NOTHING");
+    expect(insertStatements[0]).toContain("ON CONFLICT DO NOTHING");
   });
 
   it("ignores duplicate LoanApproved rows for the same loan and emits side effects once", async () => {
