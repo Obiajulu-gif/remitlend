@@ -1,15 +1,18 @@
 "use client";
 
 import { useMemo } from "react";
-import { ArrowUp, ArrowDown } from "lucide-react";
-import { FinancialTermTooltip } from "./tooltip";
+import { ArrowUp, ArrowDown, RefreshCw, AlertCircle } from "lucide-react";
+import { FinancialTermTooltip } from "./Tooltip";
 import { FINANCIAL_EXPLANATIONS } from "./financial-terms";
 
 interface CreditScoreGaugeProps {
-  score: number;
+  score?: number | null;
   previousScore?: number;
   min?: number;
   max?: number;
+  isLoading?: boolean;
+  error?: Error | null;
+  onRetry?: () => void;
 }
 
 type ScoreBand = {
@@ -52,9 +55,100 @@ export function CreditScoreGauge({
   previousScore,
   min = 300,
   max = 850,
+  isLoading = false,
+  error = null,
+  onRetry,
 }: CreditScoreGaugeProps) {
-  const band = useMemo(() => getBand(score), [score]);
-  const delta = previousScore != null ? score - previousScore : null;
+  const numericScore = typeof score === "number" && Number.isFinite(score) ? score : null;
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative" role="status" aria-label="Loading credit score">
+          <svg width="240" height="160" viewBox="0 60 240 140">
+            <path
+              d={describeArc(120, 120, 100, -120, 120)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="14"
+              strokeLinecap="round"
+              className="text-zinc-200 dark:text-zinc-800 animate-pulse"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
+            <RefreshCw className="h-8 w-8 animate-spin text-zinc-400" />
+          </div>
+        </div>
+        <span className="text-sm font-semibold text-zinc-400">Loading score...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative" role="alert" aria-label="Error loading credit score">
+          <svg width="240" height="160" viewBox="0 60 240 140">
+            <path
+              d={describeArc(120, 120, 100, -120, 120)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="14"
+              strokeLinecap="round"
+              className="text-zinc-200 dark:text-zinc-800"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
+            <AlertCircle className="h-8 w-8 text-red-500" />
+          </div>
+        </div>
+        <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+          Failed to load score
+        </span>
+        <p className="max-w-xs text-center text-xs text-zinc-500 dark:text-zinc-400">
+          {error.message || "Unable to fetch your credit score"}
+        </p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-2 rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (numericScore === null || numericScore === 0 || numericScore < min) {
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <div className="relative" role="img" aria-label="No credit score yet">
+          <svg width="240" height="160" viewBox="0 60 240 140">
+            <path
+              d={describeArc(120, 120, 100, -120, 120)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="14"
+              strokeLinecap="round"
+              className="text-zinc-200 dark:text-zinc-800"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
+            <span className="text-4xl font-bold text-zinc-400">--</span>
+          </div>
+        </div>
+        <span className="text-sm font-semibold text-zinc-500">No Score Yet</span>
+        <p className="max-w-xs text-center text-xs text-zinc-500 dark:text-zinc-400">
+          Complete your first remittance or loan repayment to establish your credit score.
+        </p>
+      </div>
+    );
+  }
+
+  const band = useMemo(() => getBand(numericScore), [numericScore]);
+  const delta = previousScore != null ? numericScore - previousScore : null;
 
   const cx = 120;
   const cy = 120;
@@ -63,11 +157,10 @@ export function CreditScoreGauge({
   const endAngle = 120;
   const totalArc = endAngle - startAngle;
 
-  const clampedScore = Math.max(min, Math.min(max, score));
+  const clampedScore = Math.max(min, Math.min(max, numericScore));
   const fraction = (clampedScore - min) / (max - min);
   const scoreAngle = startAngle + fraction * totalArc;
 
-  // Background arc segments per band
   const bandArcs = useMemo(() => {
     return BANDS.map((b) => {
       const bStart = startAngle + ((b.range[0] - min) / (max - min)) * totalArc;
@@ -76,14 +169,16 @@ export function CreditScoreGauge({
     });
   }, [min, max]);
 
-  // Active arc from start to current score
   const activePath = describeArc(cx, cy, r, startAngle, scoreAngle);
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="relative" role="img" aria-label={`Credit score: ${score}, ${band.label}`}>
+      <div
+        className="relative"
+        role="img"
+        aria-label={`Credit score: ${numericScore}, ${band.label}`}
+      >
         <svg width="240" height="160" viewBox="0 60 240 140">
-          {/* Background band arcs */}
           {bandArcs.map((b) => (
             <path
               key={b.label}
@@ -96,7 +191,6 @@ export function CreditScoreGauge({
             />
           ))}
 
-          {/* Colored band segments */}
           {bandArcs.map((b) => (
             <path
               key={`color-${b.label}`}
@@ -109,7 +203,6 @@ export function CreditScoreGauge({
             />
           ))}
 
-          {/* Active score arc */}
           <path
             d={activePath}
             fill="none"
@@ -119,23 +212,20 @@ export function CreditScoreGauge({
           />
         </svg>
 
-        {/* Center score display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
           <div className="flex flex-col items-center">
-            <span className={`text-4xl font-bold ${band.color}`}>{score}</span>
+            <span className={`text-4xl font-bold ${band.color}`}>{numericScore}</span>
             <FinancialTermTooltip
               term="Credit Score"
               explanation={FINANCIAL_EXPLANATIONS.CREDIT_SCORE}
-              className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mt-1"
+              className="mt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500"
             />
           </div>
         </div>
       </div>
 
-      {/* Band label */}
       <span className={`text-sm font-semibold ${band.color}`}>{band.label}</span>
 
-      {/* Trend indicator */}
       {delta !== null && delta !== 0 && (
         <div
           className={`flex items-center gap-1 text-xs font-medium ${
@@ -150,14 +240,13 @@ export function CreditScoreGauge({
         </div>
       )}
 
-      {/* Tooltip / explanation */}
       <p className="max-w-xs text-center text-xs text-zinc-500 dark:text-zinc-400">
         Your credit score ranges from {min} to {max}. Maintain on-time repayments and low{" "}
         <FinancialTermTooltip
           term="utilization"
           explanation={FINANCIAL_EXPLANATIONS.UTILIZATION_RATE}
           className="border-none p-0 h-auto font-medium text-zinc-600 dark:text-zinc-300"
-          icon={() => null} // Hide icon here to keep text flow clean
+          icon={() => null}
         />{" "}
         to improve your score.
       </p>

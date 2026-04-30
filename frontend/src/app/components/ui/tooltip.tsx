@@ -1,71 +1,84 @@
-"use client";
+﻿"use client";
 
-import * as React from "react";
-import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { Info, HelpCircle } from "lucide-react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { Info } from "lucide-react";
+import { useId, type ReactNode } from "react";
 
-/** Tool to merge Tailwind classes safely */
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+type TooltipProps = {
+  content: ReactNode;
+  label?: string;
+  iconClassName?: string;
+  className?: string;
+};
+
+export function Tooltip({ content, label = "More info", iconClassName, className }: TooltipProps) {
+  const id = useId();
+
+  return (
+    <span className={`group relative inline-flex items-center ${className ?? ""}`}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-zinc-400 transition hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
+      >
+        <Info className={`h-4 w-4 ${iconClassName ?? ""}`} />
+      </button>
+      <span
+        id={id}
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 text-xs leading-5 text-zinc-700 shadow-lg shadow-zinc-900/10 group-hover:block group-focus-within:block dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:shadow-none"
+      >
+        {content}
+      </span>
+    </span>
+  );
 }
 
-const TooltipProvider = TooltipPrimitive.Provider;
-const Tooltip = TooltipPrimitive.Root;
-const TooltipTrigger = TooltipPrimitive.Trigger;
+type TooltipProviderProps = {
+  children: ReactNode;
+  delayDuration?: number;
+};
 
-const TooltipContent = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn(
-        "z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-        className
-      )}
-      {...props}
-    />
-  </TooltipPrimitive.Portal>
-));
-TooltipContent.displayName = TooltipPrimitive.Content.displayName;
+export function TooltipProvider({ children }: TooltipProviderProps) {
+  return <>{children}</>;
+}
 
-/**
- * Standardized tooltip for financial terms with an info icon.
- */
+type FinancialTermTooltipProps = {
+  term: string;
+  explanation: ReactNode;
+  className?: string;
+  label?: string;
+  icon?: () => ReactNode;
+};
+
 export function FinancialTermTooltip({
   term,
   explanation,
   className,
-  icon: Icon = Info,
-}: {
-  term: string;
-  explanation: string;
-  className?: string;
-  icon?: React.ElementType;
-}) {
+  label,
+  icon,
+}: FinancialTermTooltipProps) {
+  const id = useId();
+  const iconNode = icon?.();
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 cursor-help border-b border-dotted border-zinc-400/50 hover:border-zinc-400 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm",
-            className,
-          )}
-          tabIndex={0}
-        >
-          {term}
-          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        <p className="max-w-[220px] leading-snug">{explanation}</p>
-      </TooltipContent>
-    </Tooltip>
+    <span className={`group relative inline-flex items-center gap-1 ${className ?? ""}`}>
+      <button
+        type="button"
+        aria-label={label ?? `${term} definition`}
+        aria-describedby={id}
+        className="inline-flex items-center gap-1 rounded-md text-inherit transition hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
+      >
+        <span className="underline decoration-dashed underline-offset-4">{term}</span>
+        {iconNode === undefined ? <Info className="h-4 w-4" /> : iconNode}
+      </button>
+      <span
+        id={id}
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 text-xs leading-5 text-zinc-700 shadow-lg shadow-zinc-900/10 group-hover:block group-focus-within:block dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:shadow-none"
+      >
+        {explanation}
+      </span>
+    </span>
   );
 }
-
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };

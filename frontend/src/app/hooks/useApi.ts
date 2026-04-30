@@ -13,10 +13,13 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  keepPreviousData,
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
+import { LoanStatusBadge, type LoanStatus } from "../components/ui/LoanStatusBadge";
 import { useUserStore } from "../stores/useUserStore";
+import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -35,10 +38,13 @@ export const queryKeys = {
     all: () => ["loans"] as const,
     detail: (id: string) => ["loans", id] as const,
     config: () => ["loans", "config"] as const,
+    borrowerPage: (address: string, params: Record<string, unknown>) =>
+      ["loans", "borrower", address, params] as const,
   },
   remittances: {
     all: () => ["remittances"] as const,
     detail: (id: string) => ["remittances", id] as const,
+    page: (params: Record<string, unknown>) => ["remittances", "page", params] as const,
   },
   user: {
     profile: () => ["user", "profile"] as const,
@@ -74,11 +80,26 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   // Attach JWT token if available (reads directly from Zustand store state,
   // safe to call outside React render since Zustand stores are singletons).
   const token = useUserStore.getState().authToken;
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    if (isJwtExpired(token)) {
+      logoutUser("expired");
+      throw new SessionExpiredError();
+    }
+
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
   }
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+
+  if (response.status === 401 && token) {
+    const error = await response
+      .json()
+      .catch(() => ({ message: "Session expired. Please sign in again." }));
+    logoutUser("expired");
+    throw new SessionExpiredError(error.message);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }));
@@ -96,7 +117,7 @@ export interface Loan {
   currency: string;
   interestRate: number;
   termDays: number;
-  status: "pending" | "active" | "repaid" | "defaulted";
+  status: LoanStatus;
   borrowerId: string;
   createdAt: string;
 }
@@ -158,7 +179,7 @@ export interface BorrowerLoan {
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
-  status: "active" | "pending" | "repaid";
+  status: LoanStatus;
   borrower: string;
   approvedAt?: string;
 }
@@ -177,10 +198,34 @@ export interface LoanDetails {
   totalRepaid: number;
   totalOwed: number;
   interestRate: number;
-  status: "active" | "repaid" | "defaulted" | "pending";
+  status: "active" | "repaid" | "defaulted" | "pending" | "liquidated";
   requestedAt?: string;
   approvedAt?: string;
   events: LoanEvent[];
+  lateFees?: number;
+  collateralLocked?: number;
+}
+
+export interface LoanAmortizationScheduleRow {
+  date: string;
+  principalPortion: number;
+  interestPortion: number;
+  totalDue: number;
+  runningBalance: number;
+}
+
+export interface LoanAmortization {
+  principal: number;
+  interestRateBps: number;
+  termLedgers: number;
+  totalInterest: number;
+  totalDue: number;
+  schedule: LoanAmortizationScheduleRow[];
+}
+
+interface LoanAmortizationPreviewParams {
+  amount: number;
+  termDays: 30 | 60 | 90;
 }
 
 export interface PoolStats {
@@ -189,6 +234,7 @@ export interface PoolStats {
   utilizationRate: number;
   apy: number;
   activeLoansCount: number;
+  poolTokenAddress?: string;
 }
 
 export interface DepositorPortfolio {
@@ -205,6 +251,147 @@ export interface LoanStats {
   totalOwed: number;
   nextPaymentDue: string | null;
   overdueCount: number;
+}
+
+export interface CursorPageInfo {
+  limit: number;
+  count: number;
+  nextCursor: string | null;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  total: number | null;
+}
+
+export interface PaginatedListResult<T> {
+  items: T[];
+  pageInfo: CursorPageInfo;
+}
+
+interface RawPageInfo {
+  limit?: number;
+  count?: number;
+  total?: number | null;
+  next_cursor?: string | null;
+  has_previous?: boolean;
+  has_next?: boolean;
+}
+
+interface RawPaginatedResponse<T> {
+  success?: boolean;
+  data: T;
+  page_info?: RawPageInfo;
+  total_count?: number | null;
+}
+
+interface CursorListParams {
+  limit?: number;
+  cursor?: string | null;
+  status?: string;
+}
+
+interface BorrowerLoansPageResponse {
+  success?: boolean;
+  data: { borrower: string; loans: BorrowerLoan[] };
+  page_info?: RawPageInfo;
+  total_count?: number | null;
+}
+
+function toQueryString(params: Record<string, string | number | null | undefined>) {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+
+    searchParams.set(key, String(value));
+  }
+
+  const queryString = searchParams.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+function normalizePageInfo(raw?: RawPageInfo, fallbackTotal?: number | null): CursorPageInfo {
+  return {
+    limit: raw?.limit ?? 20,
+    count: raw?.count ?? 0,
+    nextCursor: raw?.next_cursor ?? null,
+    hasPrevious: raw?.has_previous ?? false,
+    hasNext: raw?.has_next ?? false,
+    total: raw?.total ?? fallbackTotal ?? null,
+  };
+}
+
+function normalizePaginatedList<T>(response: RawPaginatedResponse<T[]>): PaginatedListResult<T> {
+  return {
+    items: response.data ?? [],
+    pageInfo: normalizePageInfo(response.page_info, response.total_count),
+  };
+}
+
+async function fetchRemittancesPage(
+  params: CursorListParams = {},
+): Promise<PaginatedListResult<Remittance>> {
+  const response = await apiFetch<RawPaginatedResponse<Remittance[]>>(
+    `/remittances${toQueryString({
+      limit: params.limit,
+      cursor: params.cursor,
+      status: params.status,
+    })}`,
+  );
+
+  return normalizePaginatedList(response);
+}
+
+async function fetchAllRemittances(status?: string): Promise<Remittance[]> {
+  const items: Remittance[] = [];
+  let cursor: string | null = null;
+
+  do {
+    const page = await fetchRemittancesPage({ limit: 100, cursor, status });
+    items.push(...page.items);
+    cursor = page.pageInfo.nextCursor;
+  } while (cursor);
+
+  return items;
+}
+
+async function fetchBorrowerLoansPage(
+  borrowerAddress: string,
+  params: CursorListParams = {},
+): Promise<PaginatedListResult<BorrowerLoan>> {
+  const response = await apiFetch<BorrowerLoansPageResponse>(
+    `/loans/borrower/${borrowerAddress}${toQueryString({
+      limit: params.limit,
+      cursor: params.cursor,
+      status: params.status,
+    })}`,
+  );
+
+  return {
+    items: response.data?.loans ?? [],
+    pageInfo: normalizePageInfo(response.page_info, response.total_count),
+  };
+}
+
+async function fetchAllBorrowerLoans(
+  borrowerAddress: string,
+  status?: string,
+): Promise<BorrowerLoan[]> {
+  const items: BorrowerLoan[] = [];
+  let cursor: string | null = null;
+
+  do {
+    const page = await fetchBorrowerLoansPage(borrowerAddress, {
+      limit: 100,
+      cursor,
+      status,
+    });
+    items.push(...page.items);
+    cursor = page.pageInfo.nextCursor;
+  } while (cursor);
+
+  return items;
 }
 
 // ─── Loan hooks ───────────────────────────────────────────────────────────────
@@ -246,6 +433,66 @@ export function useLoan(
       return response;
     },
     enabled: !!id,
+    ...options,
+  });
+}
+
+/**
+ * Fetches amortization schedule for a loan when a loan id is available.
+ */
+export function useLoanAmortizationSchedule(
+  id: string | undefined,
+  options?: Omit<UseQueryOptions<LoanAmortization>, "queryKey" | "queryFn">,
+) {
+  return useQuery<LoanAmortization>({
+    queryKey: [...queryKeys.loans.detail(id ?? ""), "amortization"],
+    queryFn: async () => {
+      const response = await apiFetch<
+        LoanAmortization | { success: boolean; amortization: LoanAmortization }
+      >(`/loans/${id}/amortization-schedule`);
+
+      if (
+        typeof response === "object" &&
+        response !== null &&
+        "success" in response &&
+        "amortization" in response
+      ) {
+        return response.amortization;
+      }
+
+      return response;
+    },
+    enabled: !!id,
+    ...options,
+  });
+}
+
+export function useLoanAmortizationPreview(
+  params: LoanAmortizationPreviewParams | undefined,
+  options?: Omit<UseQueryOptions<LoanAmortization>, "queryKey" | "queryFn">,
+) {
+  return useQuery<LoanAmortization>({
+    queryKey: ["loans", "amortization-preview", params?.amount ?? 0, params?.termDays ?? 0],
+    queryFn: async () => {
+      const response = await apiFetch<
+        LoanAmortization | { success: boolean; amortization: LoanAmortization }
+      >("/loans/amortization-preview", {
+        method: "POST",
+        body: JSON.stringify(params),
+      });
+
+      if (
+        typeof response === "object" &&
+        response !== null &&
+        "success" in response &&
+        "amortization" in response
+      ) {
+        return response.amortization;
+      }
+
+      return response;
+    },
+    enabled: Boolean(params),
     ...options,
   });
 }
@@ -304,7 +551,20 @@ export function useRemittances(
 ) {
   return useQuery<Remittance[]>({
     queryKey: queryKeys.remittances.all(),
-    queryFn: () => apiFetch<Remittance[]>("/remittances"),
+    queryFn: () => fetchAllRemittances(),
+    ...options,
+  });
+}
+
+export function useRemittancesPage(params: CursorListParams = {}, options?: { enabled?: boolean }) {
+  return useQuery<PaginatedListResult<Remittance>>({
+    queryKey: queryKeys.remittances.page({
+      limit: params.limit ?? 20,
+      cursor: params.cursor ?? null,
+      status: params.status ?? "all",
+    }),
+    queryFn: () => fetchRemittancesPage(params),
+    placeholderData: keepPreviousData,
     ...options,
   });
 }
@@ -536,11 +796,6 @@ export function useYieldHistory(
 
 // ─── Borrower loans hook ──────────────────────────────────────────────────────
 
-interface BorrowerLoansApiResponse {
-  success: boolean;
-  data: { borrower: string; loans: BorrowerLoan[]; totalLoans: number };
-}
-
 interface PoolApiResponse<T> {
   success: boolean;
   data: T;
@@ -553,14 +808,14 @@ interface PoolApiResponse<T> {
  * Also computes derived stats (totals, overdue count, next deadline).
  */
 export function useBorrowerLoans(borrowerAddress: string | undefined) {
-  const query = useQuery<BorrowerLoansApiResponse>({
+  const query = useQuery<BorrowerLoan[]>({
     queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress ?? ""),
-    queryFn: () => apiFetch<BorrowerLoansApiResponse>(`/loans/borrower/${borrowerAddress}`),
+    queryFn: () => fetchAllBorrowerLoans(borrowerAddress ?? ""),
     enabled: !!borrowerAddress,
     staleTime: 30_000,
   });
 
-  const loans = query.data?.data.loans ?? [];
+  const loans = query.data ?? [];
 
   const activeLoans = loans.filter((l) => l.status === "active");
   const now = new Date();
@@ -580,6 +835,25 @@ export function useBorrowerLoans(borrowerAddress: string | undefined) {
   };
 
   return { ...query, loans, stats };
+}
+
+export function useBorrowerLoansPage(
+  borrowerAddress: string | undefined,
+  params: CursorListParams = {},
+  options?: { enabled?: boolean },
+) {
+  return useQuery<PaginatedListResult<BorrowerLoan>>({
+    queryKey: queryKeys.loans.borrowerPage(borrowerAddress ?? "", {
+      limit: params.limit ?? 20,
+      cursor: params.cursor ?? null,
+      status: params.status ?? "all",
+    }),
+    queryFn: () => fetchBorrowerLoansPage(borrowerAddress ?? "", params),
+    enabled: !!borrowerAddress,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+    ...options,
+  });
 }
 
 export function usePoolStats(options?: Omit<UseQueryOptions<PoolStats>, "queryKey" | "queryFn">) {
@@ -796,15 +1070,15 @@ export function useDepositToPool() {
   type DepositContext = { previousPoolStats: unknown; previousDepositor: unknown };
 
   return useMutation<
-    { txHash: string },
+    { unsignedTxXdr: string; networkPassphrase: string },
     Error,
-    { amount: number; depositorAddress: string },
+    { amount: number; depositorAddress: string; token: string },
     DepositContext
   >({
-    mutationFn: ({ amount, depositorAddress }) =>
-      apiFetch<{ txHash: string }>("/pool/deposit", {
+    mutationFn: ({ amount, depositorAddress, token }) =>
+      apiFetch<{ unsignedTxXdr: string; networkPassphrase: string }>("/pool/build-deposit", {
         method: "POST",
-        body: JSON.stringify({ amount, depositorAddress }),
+        body: JSON.stringify({ amount, depositorPublicKey: depositorAddress, token }),
       }),
 
     onMutate: async ({ amount, depositorAddress }) => {
@@ -866,15 +1140,15 @@ export function useWithdrawFromPool() {
   type WithdrawContext = { previousPoolStats: unknown; previousDepositor: unknown };
 
   return useMutation<
-    { txHash: string },
+    { unsignedTxXdr: string; networkPassphrase: string },
     Error,
-    { amount: number; depositorAddress: string },
+    { amount: number; depositorAddress: string; token: string },
     WithdrawContext
   >({
-    mutationFn: ({ amount, depositorAddress }) =>
-      apiFetch<{ txHash: string }>("/pool/withdraw", {
+    mutationFn: ({ amount, depositorAddress, token }) =>
+      apiFetch<{ unsignedTxXdr: string; networkPassphrase: string }>("/pool/build-withdraw", {
         method: "POST",
-        body: JSON.stringify({ amount, depositorAddress }),
+        body: JSON.stringify({ amount, depositorPublicKey: depositorAddress, token }),
       }),
 
     onMutate: async ({ amount, depositorAddress }) => {
@@ -922,5 +1196,25 @@ export function useWithdrawFromPool() {
       queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
       queryClient.invalidateQueries({ queryKey: queryKeys.pool.depositor(depositorAddress) });
     },
+  });
+}
+
+/**
+ * Submits a signed pool transaction to the Stellar network.
+ */
+export async function submitPoolTransaction(signedTxXdr: string) {
+  return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/pool/submit", {
+    method: "POST",
+    body: JSON.stringify({ signedTxXdr }),
+  });
+}
+
+/**
+ * Submits a signed loan transaction (e.g. repayment) to the Stellar network.
+ */
+export async function submitLoanTransaction(signedTxXdr: string) {
+  return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/loans/submit", {
+    method: "POST",
+    body: JSON.stringify({ signedTxXdr }),
   });
 }

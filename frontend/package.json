@@ -9,6 +9,7 @@
     "lint": "prettier --check .",
     "audit:a11y": "next build && npx axe-playwright",
     "format": "prettier --write .",
+    "test:e2e": "playwright test",
     "prepare": "husky"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "lucide-react": "^0.575.0",
     "next": "^16.2.1",
     "next-intl": "^4.8.3",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.1",
@@ -63,5 +65,8 @@
       "eslint --fix",
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "axios": "1.13.5"
   }
 }

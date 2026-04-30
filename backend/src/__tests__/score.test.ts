@@ -4,6 +4,8 @@ import request from "supertest";
 // Mock the database connection module before any other imports
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: jest.fn(),
+  getClient: jest.fn(),
+  withTransaction: jest.fn(),
   default: {
     query: jest.fn(),
   },
@@ -54,7 +56,9 @@ describe("GET /api/score/:userId", () => {
   });
 
   it("should return a score for a valid userId", async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [{ current_score: 750 }] } as any);
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ current_score: 750 }],
+    } as any);
 
     const response = await request(app)
       .get("/api/score/user123")
@@ -89,8 +93,12 @@ describe("GET /api/score/:userId", () => {
 
 describe("POST /api/score/update", () => {
   it("should increase score by 15 for on-time repayment", async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] } as any);
-    mockedQuery.mockResolvedValueOnce({ rows: [{ current_score: 515 }] } as any);
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ current_score: 500 }],
+    } as any);
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ current_score: 515 }],
+    } as any);
 
     const response = await request(app)
       .post("/api/score/update")

@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
-  helperText?: string;
+  helperText?: React.ReactNode;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
 }
@@ -33,6 +33,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className="text-sm font-medium leading-none text-gray-700 dark:text-zinc-300"
           >
             {label}
+            {props.required && <span className="ml-1 text-red-500">*</span>}
           </label>
         )}
         <div className="relative flex items-center">
